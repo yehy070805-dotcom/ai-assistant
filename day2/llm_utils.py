@@ -1,45 +1,47 @@
-"""
-大模型调用工具模块
-封装 API 调用，方便项目复用
-日期:2026-06-30
-"""
-
 import os
+import time
+
 from dotenv import load_dotenv
 from openai import OpenAI
 
-# 加载环境变量
 load_dotenv()
 
-# 初始化客户端（只执行一次）
-client = OpenAI(
+# 初始化 DeepSeek 客户端
+_client = OpenAI(
     api_key=os.getenv("DEEPSEEK_API_KEY"),
     base_url="https://api.deepseek.com"
 )
 
-def first_call_llm(prompt, system_prompt="你是一个有用的助手", temperature=0.7, max_tokens=500):
+
+def first_call_llm(prompt, temperature=0.0, max_tokens=500, retries=3):
     """
-    通用的大模型调用函数
+    调用大模型 API,自动重试
     
     参数:
-        prompt (str): 用户输入的提示词
-        system_prompt (str): 系统提示词，定义 AI 的角色
-        temperature (float): 0.0~1.5,越高越随机
+        prompt (str): 用户输入
+        temperature (float): 0.0~1.5
         max_tokens (int): 最大返回长度
+        retries (int): 最大重试次数
     
     返回:
-        str: AI 的文本回复
+        str: AI 回复文本
     """
-    try:
-        response = client.chat.completions.create(
-            model="deepseek-chat",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=temperature,
-            max_tokens=max_tokens
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        return f"[错误] API 调用失败: {e}"
+    for attempt in range(retries):
+        try:
+            response = _client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=temperature,
+                max_tokens=max_tokens,
+                timeout=30  # 30 秒超时
+            )
+            return response.choices[0].message.content
+        
+        except Exception as e:
+            print(f"[重试 {attempt+1}/{retries}] 出错: {e}")
+            if attempt < retries - 1:
+                time.sleep(2)  # 等 2 秒再试
+            else:
+                return f"[错误] 重试 {retries} 次后仍然失败: {e}"
